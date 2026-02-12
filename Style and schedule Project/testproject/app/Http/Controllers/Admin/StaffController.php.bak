@@ -1,0 +1,126 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Models\Admin;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Auth;
+use App\Http\Traits\Upload;
+
+class StaffController extends Controller
+{
+    public function index()
+    {
+        $staff = Admin::all();
+        return view('admin.staff.index', compact('staff'));
+    }
+
+    public function create()
+    {
+        return view('admin.staff.create');
+    }
+
+    public function store(Request $request)
+    {
+        try {
+            $request->validate([
+                'name' => 'required|max:255',
+                'username' => 'required|max:255',
+                'email' => 'required|email|unique:staff',
+                'password' => 'required|min:8',
+                'phone' => 'required',
+                'address' => 'required',
+                'photo' => 'required|image',
+                'role' => 'required',
+                'status' => 'required',
+            ]);
+
+            $staff = new Admin($request->all());
+            $staff->password = Hash::make($request->password, ['rounds' => 10]);
+            $staff->admin_access = json_encode(["admin.dashboard", "admin.staff.view", "admin.staff.search", "admin.transaction", "admin.transaction.search", "admin.users", "admin.users.search", "admin.email-send", "admin.manage.theme", "admin.language.index", "admin.content.index"]);
+            if ($request->hasFile('image')) {
+                try {
+                    $staff->image = $this->uploadImage(
+                        $request->image,
+                        config('location.admin.path'),
+                        config('location.team.size'),
+                        $staff->image
+                    );
+                } catch (\Exception) {
+                    return back()->with('error', __('Image could not be uploaded.'));
+                }
+            }
+            $staff->save();
+
+            return redirect()->route('admin.staff.index');
+        } catch (\Exception $e) {
+            return back()->withInput()->withErrors(['unexpected_error' => 'Unexpected error occurred while trying to process your request.']);
+        }
+    }
+
+    public function show(Admin $admin)
+    {
+        $admins = Admin::all();
+
+        return view('admin.staff.show', compact('admins'));
+    }
+
+    public function edit($id)
+    {
+        $staff = Admin::findOrFail($id);
+
+        return view('admin.staff.show', ['staff' => $staff]);
+    }
+    public function update(Request $request, Admin $staff)
+    {
+        $request->validate([
+            'name' => 'required|max:255',
+            'email' => 'required|email|unique:staff,email,' . $staff->id,
+            'phone' => 'required',
+            'address' => 'required',
+            'photo' => 'sometimes|image',
+            'password' => 'sometimes|min:8',
+            'facebook_url' => 'nullable|url',
+            'twitter_url' => 'nullable|url',
+            'linkedin_url' => 'nullable|url',
+            'skype' => 'nullable',
+            'about' => 'required',
+            'staff_type' => 'required',
+        ]);
+
+        $staff->fill($request->all());
+
+        if ($request->has('password')) {
+            $staff->password = $request->password;
+        }
+
+        if ($request->hasFile('photo')) {
+            Storage::delete($staff->photo);
+            $staff->photo = $request->file('photo')->store('staff_photos');
+        }
+
+        $staff->save();
+
+        return redirect()->route('admin.staff.index');
+    }
+
+    public function destroy($id)
+    {
+        $staff = Admin::findOrFail($id);
+        if ($staff->role == "admin") {
+        } else {
+            $staff->delete($staff->id);
+            return redirect()->route('admin.staff.index');
+        }
+    }
+
+    public function logout()
+    {
+        Auth::logout();
+
+        return redirect('admin/login');
+    }
+}
